@@ -15,8 +15,9 @@ type RequestLine struct {
 type parserState string
 
 const (
-	StateInit parserState = "init"
-	StateDone parserState = "done"
+	StateInit  parserState = "init"
+	StateDone  parserState = "done"
+	StateError parserState = "error"
 )
 
 type Request struct {
@@ -32,6 +33,7 @@ func newRequest() *Request {
 
 var ERROR_MALFORMED_REQUEST_LINE = fmt.Errorf("MALFORMED LINE IN THE REQUEST")
 var ERROR_UNSUPPORTED_HTTP_VERSION = fmt.Errorf("HTTP VERSION NOT SUPPORTED, ONLY SUPPORTS 1.1")
+var ERROR_REQUEST_IN_ERROR_STATE = fmt.Errorf("REQUEST IN ERROR STATE")
 var SEPERATOR = []byte("\r\n")
 
 func parseRequestLine(b []byte) (*RequestLine, int, error) {
@@ -67,9 +69,12 @@ func (r *Request) parse(data []byte) (int, error) {
 outer:
 	for {
 		switch r.state {
+		case StateError:
+			return 0, ERROR_REQUEST_IN_ERROR_STATE
 		case StateInit:
 			rl, n, err := parseRequestLine(data[read:])
 			if err != nil {
+				r.state = StateError
 				return 0, err
 			}
 
@@ -88,7 +93,7 @@ outer:
 }
 
 func (r *Request) done() bool {
-	return r.state == StateDone
+	return r.state == StateDone || r.state == StateError
 }
 
 func RequestFromReader(r io.Reader) (*Request, error) {
@@ -101,6 +106,7 @@ func RequestFromReader(r io.Reader) (*Request, error) {
 		if err != nil {
 			return nil, err
 		}
+		bufLen += n
 
 		readN, err := request.parse(buf[:bufLen])
 		if err != nil {
