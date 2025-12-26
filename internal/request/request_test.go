@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kunalsinghdadhwal/flux/internal/request"
+	r "github.com/kunalsinghdadhwal/flux/internal/request"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,25 +35,47 @@ func TestRequestLineParse(t *testing.T) {
 		numBytesPerRead: 3,
 	}
 
-	r, err := request.RequestFromReader(reader)
+	req, err := r.RequestFromReader(reader)
 	require.NoError(t, err)
-	require.NotNil(t, r)
-	assert.Equal(t, "GET", r.RequestLine.Method)
-	assert.Equal(t, "/", r.RequestLine.RequestTarget)
-	assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
+	require.NotNil(t, req)
+	assert.Equal(t, "GET", req.RequestLine.Method)
+	assert.Equal(t, "/", req.RequestLine.RequestTarget)
+	assert.Equal(t, "1.1", req.RequestLine.HttpVersion)
 
 	reader = &chunkReader{
 		data:            "GET /coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
 		numBytesPerRead: 1,
 	}
-	r, err = request.RequestFromReader(reader)
+	req, err = r.RequestFromReader(reader)
 	require.NoError(t, err)
-	require.NotNil(t, r)
-	assert.Equal(t, "GET", r.RequestLine.Method)
-	assert.Equal(t, "/coffee", r.RequestLine.RequestTarget)
-	assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
+	require.NotNil(t, req)
+	assert.Equal(t, "GET", req.RequestLine.Method)
+	assert.Equal(t, "/coffee", req.RequestLine.RequestTarget)
+	assert.Equal(t, "1.1", req.RequestLine.HttpVersion)
 
 	// Test: Invalid number of parts in request line
-	_, err = request.RequestFromReader(strings.NewReader("/coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n"))
+	_, err = r.RequestFromReader(strings.NewReader("/coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n"))
+	require.Error(t, err)
+}
+
+func TestParseHeaders(t *testing.T) {
+	// Test: Standard Headers
+	reader := &chunkReader{
+		data:            "GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+		numBytesPerRead: 3,
+	}
+	req, err := r.RequestFromReader(reader)
+	require.NoError(t, err)
+	require.NotNil(t, req)
+	assert.Equal(t, "localhost:42069", req.Headers.Get("host"))
+	assert.Equal(t, "curl/7.81.0", req.Headers.Get("user-agent"))
+	assert.Equal(t, "*/*", req.Headers.Get("accept"))
+
+	// Test: Malformed Header
+	reader = &chunkReader{
+		data:            "GET / HTTP/1.1\r\nHost localhost:42069\r\n\r\n",
+		numBytesPerRead: 3,
+	}
+	req, err = r.RequestFromReader(reader)
 	require.Error(t, err)
 }
