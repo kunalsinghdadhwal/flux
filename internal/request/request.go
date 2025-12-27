@@ -90,12 +90,16 @@ outer:
 			r.RequestLine = *rl
 			read += n
 
-			r.state = StateDone
+			r.state = StateHeaders
 
 		case StateHeaders:
 			n, done, err := r.Headers.Parse(currentData)
 			if err != nil {
 				return 0, err
+			}
+
+			if n == 0 {
+				break outer
 			}
 
 			read += n
