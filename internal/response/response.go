@@ -24,25 +24,22 @@ func GetDefaultHeaders(contentLen int) *headers.Headers {
 	h := headers.NewHeaders()
 	h.Set("Content-Length", fmt.Sprintf("%d", contentLen))
 	h.Set("Connection", "close")
-	h.Set("Content-Typr", "text/plain")
+	h.Set("Content-Type", "text/plain")
 
 	return h
 }
 
-func WriteHeaders(w io.Writer, h *headers.Headers) error {
-	var err error = nil
-	b := []byte{}
-	h.ForEach(func(n, v string) {
-		b = fmt.Appendf(b, "%s: %s\r\n", n, v)
-	})
-
-	b = fmt.Append(b, "\r\n")
-	_, err = w.Write(b)
-
-	return err
+type Writer struct {
+	writer io.Writer
 }
 
-func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
+func NewWriter(writer io.Writer) *Writer {
+	return &Writer{
+		writer: writer,
+	}
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 	statusLine := []byte{}
 	switch statusCode {
 	case StatusOK:
@@ -55,6 +52,24 @@ func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
 		return UNRECOGNIZED_ERROR_CODE
 	}
 
-	_, err := w.Write(statusLine)
+	_, err := w.writer.Write(statusLine)
 	return err
+}
+
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
+	var err error = nil
+	b := []byte{}
+	headers.ForEach(func(n, v string) {
+		b = fmt.Appendf(b, "%s: %s\r\n", n, v)
+	})
+
+	b = fmt.Append(b, "\r\n")
+	_, err = w.writer.Write(b)
+
+	return err
+}
+func (w *Writer) WriteBody(p []byte) (int, error) {
+	n, err := w.writer.Write(p)
+
+	return n, err
 }
