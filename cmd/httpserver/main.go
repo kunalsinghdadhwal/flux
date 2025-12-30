@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/kunalsinghdadhwal/flux/internal/request"
@@ -56,13 +58,39 @@ func main() {
 		h := response.GetDefaultHeaders(0)
 		body := respond200()
 		status := response.StatusOK
-		switch req.RequestLine.RequestTarget {
-		case "/yourproblem":
+		if req.RequestLine.RequestTarget == "/yourproblem" {
 			status = response.StatusBadRequest
 			body = respond400()
-		case "/myproblem":
+		} else if req.RequestLine.RequestTarget == "/myproblem" {
 			status = response.StatusInernalServerError
 			body = respond500()
+		} else if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/stream") {
+			target := req.RequestLine.RequestTarget
+
+			res, err := http.Get("https://httpbin.org/" + target[len("/httpbin/"):])
+			if err != nil {
+				body = respond500()
+				status = response.StatusInernalServerError
+			} else {
+				w.WriteStatusLine(response.StatusOK)
+				h.Delete("Content-length")
+				h.Set("transfer-encoding", "chunked")
+				h.Replace("content-type", "text/plain")
+				w.WriteHeaders(*h)
+
+				for {
+					data := make([]byte, 32)
+					n,err := res.Body.Read(data)
+					if err != nil {
+						break
+					}
+					w.WriteBody([]byte(fmt.Sprintf("%x\r\n",n)))
+					w.WriteBody(data[:n])
+					w.WriteBody([]byte("\r\n"))
+				}
+				w.WriteBody([]byte("0\r\n\r\n"))
+				return
+			}
 		}
 		h.Replace("Content-length", fmt.Sprintf("%d", len(body)))
 		h.Replace("Content-type", "text/html")
