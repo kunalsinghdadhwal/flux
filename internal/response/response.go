@@ -3,11 +3,86 @@ package response
 import (
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 
 	"github.com/kunalsinghdadhwal/flux/internal/headers"
 )
 
 type Response struct {
+	StatusCode int
+	Headers    *headers.Headers
+	Body       net.Conn
+}
+
+func Get(rawURL string) (*Response, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+
+	if u.Scheme == "https" {
+		return nil, fmt.Errorf("HTTPS not supported, use HTTP")
+	}
+
+	host := u.Host
+	if u.Port() == "" {
+		host = fmt.Sprintf("%s:80", u.Hostname())
+	}
+
+	conn, err := net.Dial("tcp", host)
+	if err != nil {
+		return nil, err
+	}
+
+	path := u.Path
+	if path == "" {
+		path = "/"
+	}
+	if u.RawQuery != "" {
+		path += "?" + u.RawQuery
+	}
+
+	// Write request
+	requestLine := fmt.Sprintf("GET %s HTTP/1.1\r\n", path)
+	conn.Write([]byte(requestLine))
+	conn.Write([]byte(fmt.Sprintf("Host: %s\r\n", u.Host)))
+	conn.Write([]byte("Connection: close\r\n"))
+	conn.Write([]byte("User-Agent: flux/1.0\r\n"))
+	conn.Write([]byte("\r\n"))
+
+	// Read and parse status line
+	buf := make([]byte, 4096)
+	n, err := conn.Read(buf)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	data := buf[:n]
+	statusCode := 0
+	fmt.Sscanf(string(data), "HTTP/1.1 %d", &statusCode)
+
+	h := headers.NewHeaders()
+
+	// Find headers section
+	headerStart := 0
+	for i := 0; i < len(data)-1; i++ {
+		if data[i] == '\r' && data[i+1] == '\n' {
+			headerStart = i + 2
+			break
+		}
+	}
+
+	if headerStart > 0 {
+		h.Parse(data[headerStart:])
+	}
+
+	return &Response{
+		StatusCode: statusCode,
+		Headers:    h,
+		Body:       conn,
+	}, nil
 }
 
 type StatusCode int

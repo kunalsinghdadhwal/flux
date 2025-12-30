@@ -1,20 +1,29 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
+	"github.com/kunalsinghdadhwal/flux/internal/headers"
 	"github.com/kunalsinghdadhwal/flux/internal/request"
 	"github.com/kunalsinghdadhwal/flux/internal/response"
 	"github.com/kunalsinghdadhwal/flux/internal/server"
 )
 
 const port = 42069
+
+func toStr(bytes []byte) string {
+	out := ""
+	for _, b := range bytes {
+		out += fmt.Sprintf("%02x", b)
+	}
+	return out
+}
 
 func respond400() []byte {
 	return []byte(`<html>
@@ -64,29 +73,70 @@ func main() {
 		} else if req.RequestLine.RequestTarget == "/myproblem" {
 			status = response.StatusInernalServerError
 			body = respond500()
-		} else if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/stream") {
+		} else if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/") {
 			target := req.RequestLine.RequestTarget
 
-			res, err := http.Get("https://httpbin.org/" + target[len("/httpbin/"):])
+			res, err := response.Get("http://httpbin.org/" + target[len("/httpbin/"):])
 			if err != nil {
 				body = respond500()
 				status = response.StatusInernalServerError
 			} else {
+				defer res.Body.Close()
 				w.WriteStatusLine(response.StatusOK)
 				h.Delete("Content-length")
 				h.Set("transfer-encoding", "chunked")
 				h.Replace("content-type", "text/plain")
+
+				h.Set("Trailer", "X-Content-SHA256")
+				h.Set("Trailer", "X-Content-Length")
 				w.WriteHeaders(*h)
 
+				fullBody := []byte{}
 				for {
 					data := make([]byte, 32)
-					n,err := res.Body.Read(data)
+					n, err := res.Body.Read(data)
 					if err != nil {
 						break
 					}
-					w.WriteBody([]byte(fmt.Sprintf("%x\r\n",n)))
+
+					fullBody = append(fullBody, data[:n]...)
+					w.WriteBody([]byte(fmt.Sprintf("%x\r\n", n)))
 					w.WriteBody(data[:n])
 					w.WriteBody([]byte("\r\n"))
+				}
+				w.WriteBody([]byte("0\r\n"))
+				trailers := headers.NewHeaders()
+				out := sha256.Sum256(fullBody)
+
+				trailers.Set("X-Content-SHA256", toStr(out[:]))
+				trailers.Set("X-Content-Length", fmt.Sprintf("%d", len(fullBody)))
+				w.WriteHeaders(*trailers)
+				return
+			}
+		} else if req.RequestLine.RequestTarget == "/video" {
+			f, err := os.Open("assets/vim.mp4")
+			if err != nil {
+				body = respond500()
+				status = response.StatusInernalServerError
+			} else {
+				defer f.Close()
+				h.Delete("Content-length")
+				h.Set("transfer-encoding", "chunked")
+				h.Replace("content-type", "video/mp4")
+				w.WriteStatusLine(response.StatusOK)
+				w.WriteHeaders(*h)
+
+				buf := make([]byte, 4096)
+				for {
+					n, err := f.Read(buf)
+					if n > 0 {
+						w.WriteBody([]byte(fmt.Sprintf("%x\r\n", n)))
+						w.WriteBody(buf[:n])
+						w.WriteBody([]byte("\r\n"))
+					}
+					if err != nil {
+						break
+					}
 				}
 				w.WriteBody([]byte("0\r\n\r\n"))
 				return
