@@ -94,7 +94,13 @@ curl http://localhost:42069/httpbin/stream/5
 Video streaming:
 
 ```bash
+mkdir assets
+curl -o assets/vim.mp4 "https://archive.org/download/SampleVideo1280x72020mb/SampleVideo_1280x720_20mb.mp4"
 curl http://localhost:42069/video --output video.mp4
+
+# other option
+# just open the below link in the browser
+http://localhost:42069/video
 ```
 
 View chunked encoding with trailers:

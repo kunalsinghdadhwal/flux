@@ -114,7 +114,7 @@ func main() {
 				return
 			}
 		} else if req.RequestLine.RequestTarget == "/video" {
-			f, err := os.Open("assets/vim.mp4")
+			f, err := os.Open("assets/vid.mp4")
 			if err != nil {
 				body = respond500()
 				status = response.StatusInernalServerError
